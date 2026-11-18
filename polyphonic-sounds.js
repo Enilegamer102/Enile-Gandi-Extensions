@@ -18,7 +18,9 @@ class Extension {
             name: 'Polyphonic & Clone Sounds',
             color1: '#ff6680',
             color2: '#e64d66',
+            // Icon for the extension library and palette header
             iconURI: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23ffffff%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
+            // Icon for individual blocks in the palette/workspace
             blockIconURI: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23ffffff%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
             blocks: [
                 {
@@ -329,8 +331,10 @@ window.tempExt = {
         name: 'polyphonicSounds.name',
         description: 'polyphonicSounds.description',
         extensionId: 'polyphonicSounds',
-        iconURL: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23e3e3e3%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
-        insetIconURL: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23e3e3e3%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
+        // Tab / category icon displayed in the left coding menu
+        iconURL: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23ffffff%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
+        // Inset icon fallback for sidebar alignment
+        insetIconURL: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23ffffff%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
         featured: true,
         disabled: false,
         collaborator: ''
