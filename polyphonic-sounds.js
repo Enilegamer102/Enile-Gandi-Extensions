@@ -15,10 +15,8 @@
                 name: 'Polyphonic & Clone Sounds',
                 color1: '#ff6680',
                 color2: '#e64d66',
-                // Embedded SVG Speaker Icon for the extension library and palette header
                 iconURI: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="white" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
                 blocks: [
-                    // Section Header 1
                     {
                         blockType: Scratch.BlockType.LABEL,
                         text: 'Polyphonic Audio Playback'
@@ -28,7 +26,8 @@
                         blockType: Scratch.BlockType.COMMAND,
                         text: 'play sound [SOUND] with volume [VOL]% pitch [PITCH] pan [PAN]',
                         arguments: {
-                            SOUND: { type: Scratch.ArgumentType.STRING, menu: 'soundMenu' },
+                            // Using native Scratch sound argument type fixes dropdown loading bugs
+                            SOUND: { type: Scratch.ArgumentType.SOUND },
                             VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
                             PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
                             PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
@@ -39,13 +38,12 @@
                         blockType: Scratch.BlockType.COMMAND,
                         text: 'play sound [SOUND] until done with volume [VOL]% pitch [PITCH] pan [PAN]',
                         arguments: {
-                            SOUND: { type: Scratch.ArgumentType.STRING, menu: 'soundMenu' },
+                            SOUND: { type: Scratch.ArgumentType.SOUND },
                             VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
                             PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
                             PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
                         }
                     },
-                    // Section Header 2
                     {
                         blockType: Scratch.BlockType.LABEL,
                         text: 'Clone Sound Management'
@@ -55,29 +53,8 @@
                         blockType: Scratch.BlockType.COMMAND,
                         text: 'stop all sounds in this clone'
                     }
-                ],
-                menus: {
-                    soundMenu: {
-                        acceptReporters: true,
-                        items: 'getSounds'
-                    }
-                }
+                ]
             };
-        }
-
-        getSounds(args, util) {
-            try {
-                const target = (util && util.target) ? util.target : (Scratch.vm && Scratch.vm.editingTarget ? Scratch.vm.editingTarget : null);
-                if (!target || !target.sprite || !target.sprite.sounds || target.sprite.sounds.length === 0) {
-                    return [{ text: 'no sounds available', value: '' }];
-                }
-                return target.sprite.sounds.map(sound => ({
-                    text: sound.name,
-                    value: sound.name
-                }));
-            } catch (e) {
-                return [{ text: 'no sounds available', value: '' }];
-            }
         }
 
         playSoundPolyWithOptions(args, util) {
