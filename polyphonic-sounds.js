@@ -115,12 +115,10 @@ class Extension {
     /* ---------- Blocks ---------- */
 
     playSoundPolyWithOptions(args, util) {
-        // Fire and forget: explicitly do NOT return a promise
         this._startSound(args, util, () => {}).catch(() => {});
     }
 
     playSoundPolyUntilDone(args, util) {
-        // Returns a promise so the thread waits until audio completes
         return new Promise((resolve) => {
             this._startSound(args, util, resolve).catch(() => resolve());
         });
@@ -295,8 +293,6 @@ class Extension {
                     resolveInner();
 
                     if (isLooping) {
-                        // Looping sounds run indefinitely, so if requested "until done", 
-                        // we release the promise immediately so it doesn't block the stack.
                         onEndedCallback();
                     }
                 }).catch((err) => {
@@ -346,4 +342,3 @@ window.tempExt = {
         }
     }
 };
-```[cite: 1]
