@@ -19,20 +19,23 @@
                     {
                         opcode: 'playSoundPolyWithOptions',
                         blockType: Scratch.BlockType.COMMAND,
-                        text: 'play sound [SOUND] with volume [VOL]% and pitch [PITCH]',
+                        text: 'play sound [SOUND] with volume [VOL]% pitch [PITCH] pan [PAN]',
                         arguments: {
-                            SOUND: {
-                                type: Scratch.ArgumentType.STRING,
-                                menu: 'soundMenu'
-                            },
-                            VOL: {
-                                type: Scratch.ArgumentType.NUMBER,
-                                defaultValue: 100
-                            },
-                            PITCH: {
-                                type: Scratch.ArgumentType.NUMBER,
-                                defaultValue: 0
-                            }
+                            SOUND: { type: Scratch.ArgumentType.STRING, menu: 'soundMenu' },
+                            VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
+                            PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
+                            PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
+                        }
+                    },
+                    {
+                        opcode: 'playSoundPolyUntilDone',
+                        blockType: Scratch.BlockType.COMMAND,
+                        text: 'play sound [SOUND] until done with volume [VOL]% pitch [PITCH] pan [PAN]',
+                        arguments: {
+                            SOUND: { type: Scratch.ArgumentType.STRING, menu: 'soundMenu' },
+                            VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
+                            PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
+                            PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
                         }
                     },
                     {
@@ -50,55 +53,83 @@
             };
         }
 
+        // Safe menu handler to prevent blank tab/crashing bugs
         getSounds(args, util) {
-            const target = util.target;
-            if (!target || !target.sprite || !target.sprite.sounds || target.sprite.sounds.length === 0) {
+            try {
+                const target = (util && util.target) ? util.target : (Scratch.vm && Scratch.vm.editingTarget ? Scratch.vm.editingTarget : null);
+                if (!target || !target.sprite || !target.sprite.sounds || target.sprite.sounds.length === 0) {
+                    return [{ text: 'no sounds available', value: '' }];
+                }
+                return target.sprite.sounds.map(sound => ({
+                    text: sound.name,
+                    value: sound.name
+                }));
+            } catch (e) {
                 return [{ text: 'no sounds available', value: '' }];
             }
-            return target.sprite.sounds.map(sound => ({
-                text: sound.name,
-                value: sound.name
-            }));
         }
 
         playSoundPolyWithOptions(args, util) {
+            this._startSound(args, util); // Fire and forget
+        }
+
+        playSoundPolyUntilDone(args, util) {
+            // Returning a Promise makes Scratch wait until resolve() is called
+            return new Promise((resolve) => {
+                this._startSound(args, util, () => {
+                    resolve();
+                });
+            });
+        }
+
+        _startSound(args, util, onEndedCallback) {
             const soundName = args.SOUND;
             const volumePercent = Math.max(0, Math.min(200, Number(args.VOL) || 0));
             const pitchValue = Number(args.PITCH) || 0;
+            const panPercent = Math.max(-100, Math.min(100, Number(args.PAN) || 0));
 
             const target = util.target;
-            if (!target) return;
+            if (!target) {
+                if (onEndedCallback) onEndedCallback();
+                return;
+            }
             const cloneId = target.id;
 
             const soundEntry = target.sprite.sounds.find(s => s.name === soundName);
-            if (!soundEntry) return;
+            if (!soundEntry) {
+                if (onEndedCallback) onEndedCallback();
+                return;
+            }
 
             const audioEngine = Scratch.vm.runtime.audioEngine;
-            if (!audioEngine) return;
+            if (!audioEngine) {
+                if (onEndedCallback) onEndedCallback();
+                return;
+            }
 
             audioEngine.decodeSoundData(soundEntry.asset).then(audioBuffer => {
                 const audioContext = audioEngine.audioContext;
-                if (!audioContext) return;
+                if (!audioContext) {
+                    if (onEndedCallback) onEndedCallback();
+                    return;
+                }
 
-                // Create source node for the sound buffer
                 const sourceNode = audioContext.createBufferSource();
                 sourceNode.buffer = audioBuffer;
-
-                // Apply pitch/playback rate change 
-                // Formula: 2^(semitones / 12) converts pitch semitones to Web Audio playback rate multiplier
                 sourceNode.playbackRate.value = Math.pow(2, pitchValue / 12);
 
-                // Create gain node for volume control (0.0 to 2.0 scale)
                 const gainNode = audioContext.createGain();
                 gainNode.gain.value = volumePercent / 100;
 
-                // Connect nodes: Source -> Gain Node -> Audio Destination (Speakers)
+                const pannerNode = audioContext.createStereoPanner();
+                pannerNode.pan.value = panPercent / 100;
+
                 sourceNode.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                gainNode.connect(pannerNode);
+                pannerNode.connect(audioContext.destination);
 
                 sourceNode.start(0);
 
-                // Track the node under this specific clone ID
                 if (!this.activeClonesSounds.has(cloneId)) {
                     this.activeClonesSounds.set(cloneId, []);
                 }
@@ -110,7 +141,10 @@
                         const index = list.indexOf(sourceNode);
                         if (index > -1) list.splice(index, 1);
                     }
+                    if (onEndedCallback) onEndedCallback();
                 };
+            }).catch(() => {
+                if (onEndedCallback) onEndedCallback();
             });
         }
 
