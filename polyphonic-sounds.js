@@ -1,7 +1,7 @@
 class Extension {
     constructor(runtime) {
         this.runtime = runtime;
-        this.activeSounds = new Map();   // target.id -> Set of { source, finish, soundName }
+        this.activeSounds = new Map();   // target.id -> Set of { source, gain, panner, finish, soundName }
         this.bufferCache = new Map();    // assetId -> Promise<AudioBuffer>
 
         if (runtime && runtime.on) {
@@ -34,11 +34,7 @@ class Extension {
                         VOL: { type: 'number', defaultValue: 100 },
                         PITCH: { type: 'number', defaultValue: 0 },
                         PAN: { type: 'number', defaultValue: 0 },
-                        LOOP: { 
-                            type: 'string', 
-                            menu: 'loopMenu',
-                            defaultValue: 'off'
-                        }
+                        LOOP: { type: 'string', menu: 'loopMenu', defaultValue: 'off' }
                     }
                 },
                 {
@@ -50,6 +46,20 @@ class Extension {
                         VOL: { type: 'number', defaultValue: 100 },
                         PITCH: { type: 'number', defaultValue: 0 },
                         PAN: { type: 'number', defaultValue: 0 }
+                    }
+                },
+                {
+                    blockType: 'label',
+                    text: 'Dynamic Sound Modifiers'
+                },
+                {
+                    opcode: 'setSoundProperty',
+                    blockType: 'command',
+                    text: 'set sound [SOUND] [PROPERTY] to [VALUE] in this clone',
+                    arguments: {
+                        SOUND: { type: 'string', menu: 'soundsMenu' },
+                        PROPERTY: { type: 'string', menu: 'propertyMenu', defaultValue: 'volume' },
+                        VALUE: { type: 'number', defaultValue: 100 }
                     }
                 },
                 {
@@ -80,6 +90,13 @@ class Extension {
                         { text: 'off', value: 'off' },
                         { text: 'on', value: 'on' }
                     ]
+                },
+                propertyMenu: {
+                    items: [
+                        { text: 'volume (%)', value: 'volume' },
+                        { text: 'pitch (semitones)', value: 'pitch' },
+                        { text: 'pan (-100 to 100)', value: 'pan' }
+                    ]
                 }
             }
         };
@@ -98,11 +115,40 @@ class Extension {
     /* ---------- Blocks ---------- */
 
     playSoundPolyWithOptions(args, util) {
-        this._startSound(args, util, false).catch(() => {});
+        return this._startSound(args, util, false).catch(() => {});
     }
 
     playSoundPolyUntilDone(args, util) {
         return this._startSound(args, util, true).catch(() => {});
+    }
+
+    setSoundProperty(args, util) {
+        if (!util.target) return;
+        const cloneId = util.target.id;
+        const set = this.activeSounds.get(cloneId);
+        if (!set) return;
+
+        const targetSoundName = String(args.SOUND);
+        const property = String(args.PROPERTY);
+        const rawValue = Number(args.VALUE) || 0;
+
+        Array.from(set).forEach((entry) => {
+            if (entry.soundName === targetSoundName) {
+                try {
+                    if (property === 'volume') {
+                        const vol = Math.max(0, Math.min(200, rawValue)) / 100;
+                        entry.gain.gain.value = vol;
+                    } else if (property === 'pitch') {
+                        entry.source.playbackRate.value = Math.pow(2, rawValue / 12);
+                    } else if (property === 'pan') {
+                        const panVal = Math.max(-100, Math.min(100, rawValue)) / 100;
+                        if (entry.panner && entry.panner.pan) {
+                            entry.panner.pan.value = panVal;
+                        }
+                    }
+                } catch (e) { /* ignore modification errors */ }
+            }
+        });
     }
 
     stopCloneSounds(args, util) {
@@ -214,7 +260,8 @@ class Extension {
                     gain.connect(panner);
                     panner.connect(audioEngine.inputNode || audioContext.destination);
 
-                    const entry = { source, finish: resolve, soundName };
+                    // Store references to source, gain, and panner so we can modify them dynamically later
+                    const entry = { source, gain, panner, finish: resolve, soundName };
                     if (!this.activeSounds.has(cloneId)) {
                         this.activeSounds.set(cloneId, new Set());
                     }
@@ -232,8 +279,6 @@ class Extension {
 
                     source.start(0);
 
-                    // If it's looping and set to "until done", loops will run indefinitely, 
-                    // so we instantly resolve the promise so it doesn't block script execution forever.
                     if (isLooping && waitTillDone) {
                         resolve();
                     }
@@ -278,7 +323,7 @@ window.tempExt = {
     l10n: {
         en: {
             'polyphonicSounds.name': 'Polyphonic & Clone Sounds',
-            'polyphonicSounds.description': 'Play overlapping sounds with volume, pitch, pan, loop controls, and target-specific stop actions.'
+            'polyphonicSounds.description': 'Play overlapping sounds with volume, pitch, pan, loop controls, dynamic property changes, and target-specific stop actions.'
         }
     }
 };
