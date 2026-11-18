@@ -1,156 +1,248 @@
-(function (Scratch) {
-    if (!Scratch.extensions.unsandboxed) {
-        alert('This extension requires unsandboxed mode to handle custom audio routing.');
-        return;
-    }
+class Extension {
+    constructor(runtime) {
+        this.runtime = runtime;
+        this.activeSounds = new Map();   // target.id -> Set of { source, finish }
+        this.bufferCache = new Map();    // assetId -> Promise<AudioBuffer>
 
-    class PolyphonicSoundExtension {
-        constructor() {
-            this.activeClonesSounds = new Map();
-        }
-
-        getInfo() {
-            return {
-                id: 'polyphonicSounds',
-                name: 'Polyphonic & Clone Sounds',
-                color1: '#ff6680',
-                color2: '#e64d66',
-                iconURI: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="white" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
-                blocks: [
-                    {
-                        blockType: Scratch.BlockType.LABEL,
-                        text: 'Polyphonic Audio Playback'
-                    },
-                    {
-                        opcode: 'playSoundPolyWithOptions',
-                        blockType: Scratch.BlockType.COMMAND,
-                        text: 'play sound [SOUND] with volume [VOL]% pitch [PITCH] pan [PAN]',
-                        arguments: {
-                            SOUND: { type: Scratch.ArgumentType.SOUND },
-                            VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
-                            PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
-                            PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
-                        }
-                    },
-                    {
-                        opcode: 'playSoundPolyUntilDone',
-                        blockType: Scratch.BlockType.COMMAND,
-                        text: 'play sound [SOUND] until done with volume [VOL]% pitch [PITCH] pan [PAN]',
-                        arguments: {
-                            SOUND: { type: Scratch.ArgumentType.SOUND },
-                            VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
-                            PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
-                            PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
-                        }
-                    },
-                    {
-                        blockType: Scratch.BlockType.LABEL,
-                        text: 'Clone Sound Management'
-                    },
-                    {
-                        opcode: 'stopCloneSounds',
-                        blockType: Scratch.BlockType.COMMAND,
-                        text: 'stop all sounds in this clone'
-                    }
-                ]
-            };
-        }
-
-        playSoundPolyWithOptions(args, util) {
-            this._startSound(args, util);
-        }
-
-        playSoundPolyUntilDone(args, util) {
-            return new Promise((resolve) => {
-                this._startSound(args, util, () => {
-                    resolve();
-                });
+        // Stop everything when the red stop button is pressed
+        if (runtime && runtime.on) {
+            runtime.on('PROJECT_STOP_ALL', () => this._stopAll());
+            // Clean up when a clone is deleted
+            runtime.on('targetWasRemoved', (target) => {
+                if (target) this._stopTarget(target.id);
             });
         }
+    }
 
-        _startSound(args, util, onEndedCallback) {
-            const soundName = args.SOUND;
-            const volumePercent = Math.max(0, Math.min(200, Number(args.VOL) || 0));
-            const pitchValue = Number(args.PITCH) || 0;
-            const panPercent = Math.max(-100, Math.min(100, Number(args.PAN) || 0));
-
-            const target = util.target;
-            if (!target) {
-                if (onEndedCallback) onEndedCallback();
-                return;
+    getInfo() {
+        return {
+            id: 'polyphonicSounds',
+            name: 'Polyphonic & Clone Sounds',
+            color1: '#ff6680',
+            color2: '#e64d66',
+            blocks: [
+                {
+                    blockType: 'label',
+                    text: 'Polyphonic Audio Playback'
+                },
+                {
+                    opcode: 'playSoundPolyWithOptions',
+                    blockType: 'command',
+                    text: 'play sound [SOUND] with volume [VOL]% pitch [PITCH] pan [PAN]',
+                    arguments: {
+                        SOUND: { type: 'string', menu: 'soundsMenu' },
+                        VOL: { type: 'number', defaultValue: 100 },
+                        PITCH: { type: 'number', defaultValue: 0 },
+                        PAN: { type: 'number', defaultValue: 0 }
+                    }
+                },
+                {
+                    opcode: 'playSoundPolyUntilDone',
+                    blockType: 'command',
+                    text: 'play sound [SOUND] until done with volume [VOL]% pitch [PITCH] pan [PAN]',
+                    arguments: {
+                        SOUND: { type: 'string', menu: 'soundsMenu' },
+                        VOL: { type: 'number', defaultValue: 100 },
+                        PITCH: { type: 'number', defaultValue: 0 },
+                        PAN: { type: 'number', defaultValue: 0 }
+                    }
+                },
+                {
+                    blockType: 'label',
+                    text: 'Clone Sound Management'
+                },
+                {
+                    opcode: 'stopCloneSounds',
+                    blockType: 'command',
+                    text: 'stop all sounds in this clone'
+                }
+            ],
+            menus: {
+                soundsMenu: {
+                    acceptReporters: true,
+                    items: '_getSoundsMenu'
+                }
             }
-            const cloneId = target.id;
+        };
+    }
 
-            // Locate sound entry in sprite sounds
-            const soundEntry = target.sprite.sounds.find(s => s.name === soundName);
-            if (!soundEntry || !soundEntry.asset) {
-                if (onEndedCallback) onEndedCallback();
-                return;
+    /* ---------- Menu ---------- */
+
+    _getSoundsMenu() {
+        const target = this.runtime.getEditingTarget() || this.runtime.getTargetForStage();
+        if (target && target.sprite && target.sprite.sounds && target.sprite.sounds.length > 0) {
+            return target.sprite.sounds.map(s => ({ text: s.name, value: s.name }));
+        }
+        return [{ text: '', value: '' }];
+    }
+
+    /* ---------- Blocks ---------- */
+
+    playSoundPolyWithOptions(args, util) {
+        // Fire and forget – never throw back into the VM
+        this._startSound(args, util).catch(() => {});
+    }
+
+    playSoundPolyUntilDone(args, util) {
+        // Returning a promise makes the thread wait until it resolves
+        return this._startSound(args, util).catch(() => {});
+    }
+
+    stopCloneSounds(args, util) {
+        if (util.target) this._stopTarget(util.target.id);
+    }
+
+    /* ---------- Internals ---------- */
+
+    _findSound(target, soundArg) {
+        const sounds = target.sprite && target.sprite.sounds;
+        if (!sounds || sounds.length === 0) return null;
+
+        // Match by name first
+        const byName = sounds.find(s => s.name === String(soundArg));
+        if (byName) return byName;
+
+        // Then by 1-based index (like the built-in sound blocks)
+        const index = Number(soundArg);
+        if (!isNaN(index) && index >= 1) {
+            return sounds[Math.round(index) - 1] || null;
+        }
+        return null;
+    }
+
+    _getBuffer(target, soundEntry, audioContext) {
+        // 1. Reuse the buffer the engine already decoded, if available
+        try {
+            const bank = target.sprite && target.sprite.soundBank;
+            const player = bank && bank.soundPlayers && bank.soundPlayers[soundEntry.soundId];
+            if (player && player.buffer) {
+                return Promise.resolve(player.buffer);
             }
+        } catch (e) { /* fall through */ }
 
-            const audioEngine = Scratch.vm.runtime.audioEngine;
-            if (!audioEngine || !audioEngine.audioContext) {
-                if (onEndedCallback) onEndedCallback();
-                return;
-            }
+        // 2. Otherwise decode the raw asset data ourselves (cached)
+        const key = soundEntry.assetId || soundEntry.soundId || soundEntry.name;
+        if (this.bufferCache.has(key)) return this.bufferCache.get(key);
 
-            const audioContext = audioEngine.audioContext;
-            const soundId = soundEntry.soundId;
+        const asset = soundEntry.asset;
+        if (!asset || !asset.data) {
+            return Promise.reject(new Error('Sound has no asset data'));
+        }
+        const d = asset.data;
+        // decodeAudioData detaches the buffer, so always hand it a copy
+        const copy = d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength);
 
-            // Load sound buffer safely from the engine's internal sound player cache
-            audioEngine.loadSoundData(soundId).then(soundBuffer => {
-                if (!soundBuffer) {
-                    if (onEndedCallback) onEndedCallback();
+        const promise = new Promise((resolve, reject) => {
+            // Callback form works on every browser
+            audioContext.decodeAudioData(copy, resolve, reject);
+        });
+        this.bufferCache.set(key, promise);
+        promise.catch(() => this.bufferCache.delete(key));
+        return promise;
+    }
+
+    _startSound(args, util) {
+        return new Promise((resolve) => {
+            try {
+                const target = util.target;
+                const audioEngine = this.runtime.audioEngine;
+                if (!target || !audioEngine || !audioEngine.audioContext) {
+                    resolve();
                     return;
                 }
 
-                // Create source node from the retrieved audio buffer
-                const sourceNode = audioContext.createBufferSource();
-                sourceNode.buffer = soundBuffer;
-                sourceNode.playbackRate.value = Math.pow(2, pitchValue / 12);
-
-                const gainNode = audioContext.createGain();
-                gainNode.gain.value = volumePercent / 100;
-
-                const pannerNode = audioContext.createStereoPanner();
-                pannerNode.pan.value = panPercent / 100;
-
-                sourceNode.connect(gainNode);
-                gainNode.connect(pannerNode);
-                pannerNode.connect(audioContext.destination);
-
-                sourceNode.start(0);
-
-                if (!this.activeClonesSounds.has(cloneId)) {
-                    this.activeClonesSounds.set(cloneId, []);
+                const soundEntry = this._findSound(target, args.SOUND);
+                if (!soundEntry) {
+                    resolve();
+                    return;
                 }
-                this.activeClonesSounds.get(cloneId).push(sourceNode);
 
-                sourceNode.onended = () => {
-                    const list = this.activeClonesSounds.get(cloneId);
-                    if (list) {
-                        const index = list.indexOf(sourceNode);
-                        if (index > -1) list.splice(index, 1);
+                const volume = Math.max(0, Math.min(200, Number(args.VOL) || 0)) / 100;
+                const pitch = Number(args.PITCH) || 0;
+                const pan = Math.max(-100, Math.min(100, Number(args.PAN) || 0)) / 100;
+
+                const audioContext = audioEngine.audioContext;
+                const cloneId = target.id;
+
+                this._getBuffer(target, soundEntry, audioContext).then((buffer) => {
+                    if (audioContext.state === 'suspended') {
+                        audioContext.resume();
                     }
-                    if (onEndedCallback) onEndedCallback();
-                };
-            }).catch(() => {
-                if (onEndedCallback) onEndedCallback();
-            });
-        }
 
-        stopCloneSounds(args, util) {
-            const cloneId = util.target.id;
-            const list = this.activeClonesSounds.get(cloneId);
-            
-            if (list) {
-                list.forEach(node => {
-                    try { node.stop(); } catch (e) { /* already stopped */ }
+                    const source = audioContext.createBufferSource();
+                    source.buffer = buffer;
+                    source.playbackRate.value = Math.pow(2, pitch / 12);
+
+                    const gain = audioContext.createGain();
+                    gain.gain.value = volume;
+
+                    const panner = audioContext.createStereoPanner();
+                    panner.pan.value = pan;
+
+                    source.connect(gain);
+                    gain.connect(panner);
+                    panner.connect(audioEngine.inputNode || audioContext.destination);
+
+                    const entry = { source, finish: resolve };
+                    if (!this.activeSounds.has(cloneId)) {
+                        this.activeSounds.set(cloneId, new Set());
+                    }
+                    this.activeSounds.get(cloneId).add(entry);
+
+                    source.onended = () => {
+                        const set = this.activeSounds.get(cloneId);
+                        if (set) {
+                            set.delete(entry);
+                            if (set.size === 0) this.activeSounds.delete(cloneId);
+                        }
+                        try { source.disconnect(); gain.disconnect(); panner.disconnect(); } catch (e) { /* ignore */ }
+                        resolve();
+                    };
+
+                    source.start(0);
+                }).catch((err) => {
+                    console.warn('[Polyphonic Sounds] Could not play sound:', err);
+                    resolve();
                 });
-                this.activeClonesSounds.set(cloneId, []);
+            } catch (err) {
+                console.warn('[Polyphonic Sounds] Error:', err);
+                resolve();
             }
-        }
+        });
     }
 
-    Scratch.extensions.register(new PolyphonicSoundExtension());
-})(Scratch);
+    _stopTarget(cloneId) {
+        const set = this.activeSounds.get(cloneId);
+        if (!set) return;
+        // Copy first: onended modifies the set
+        Array.from(set).forEach(({ source, finish }) => {
+            try { source.stop(); } catch (e) { /* already stopped */ }
+            finish(); // make sure "until done" threads are released
+        });
+        this.activeSounds.delete(cloneId);
+    }
+
+    _stopAll() {
+        Array.from(this.activeSounds.keys()).forEach(id => this._stopTarget(id));
+    }
+}
+
+window.tempExt = {
+    Extension: Extension,
+    info: {
+        name: 'polyphonicSounds.name',
+        description: 'polyphonicSounds.description',
+        extensionId: 'polyphonicSounds',
+        iconURL: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23e3e3e3%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
+        insetIconURL: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 height=%2224px%22 width=%2224px%22 fill=%22%23e3e3e3%22%3E%3Cpath d=%22M7.55,19.38Q6.53,18.35 6.53,16.9t1.03-2.47t2.47-1.03q0.57,0 1.08,0.17t0.92,0.51V3.6h5.44V6.87H13.53V16.9q0,1.45-1.03,2.47T10.03,20.4T7.55,19.38Z%22/%3E%3C/svg%3E',
+        featured: true,
+        disabled: false,
+        collaborator: ''
+    },
+    l10n: {
+        en: {
+            'polyphonicSounds.name': 'Polyphonic & Clone Sounds',
+            'polyphonicSounds.description': 'Play overlapping sounds with volume, pitch and pan, and stop sounds per clone.'
+        }
+    }
+};
