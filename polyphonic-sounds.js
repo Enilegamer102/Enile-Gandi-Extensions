@@ -26,7 +26,6 @@
                         blockType: Scratch.BlockType.COMMAND,
                         text: 'play sound [SOUND] with volume [VOL]% pitch [PITCH] pan [PAN]',
                         arguments: {
-                            // Using native Scratch sound argument type fixes dropdown loading bugs
                             SOUND: { type: Scratch.ArgumentType.SOUND },
                             VOL: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 },
                             PITCH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 },
@@ -82,27 +81,32 @@
             }
             const cloneId = target.id;
 
+            // Locate sound entry in sprite sounds
             const soundEntry = target.sprite.sounds.find(s => s.name === soundName);
-            if (!soundEntry) {
+            if (!soundEntry || !soundEntry.asset) {
                 if (onEndedCallback) onEndedCallback();
                 return;
             }
 
             const audioEngine = Scratch.vm.runtime.audioEngine;
-            if (!audioEngine) {
+            if (!audioEngine || !audioEngine.audioContext) {
                 if (onEndedCallback) onEndedCallback();
                 return;
             }
 
-            audioEngine.decodeSoundData(soundEntry.asset).then(audioBuffer => {
-                const audioContext = audioEngine.audioContext;
-                if (!audioContext) {
+            const audioContext = audioEngine.audioContext;
+            const soundId = soundEntry.soundId;
+
+            // Load sound buffer safely from the engine's internal sound player cache
+            audioEngine.loadSoundData(soundId).then(soundBuffer => {
+                if (!soundBuffer) {
                     if (onEndedCallback) onEndedCallback();
                     return;
                 }
 
+                // Create source node from the retrieved audio buffer
                 const sourceNode = audioContext.createBufferSource();
-                sourceNode.buffer = audioBuffer;
+                sourceNode.buffer = soundBuffer;
                 sourceNode.playbackRate.value = Math.pow(2, pitchValue / 12);
 
                 const gainNode = audioContext.createGain();
