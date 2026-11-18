@@ -115,11 +115,15 @@ class Extension {
     /* ---------- Blocks ---------- */
 
     playSoundPolyWithOptions(args, util) {
-        return this._startSound(args, util, false).catch(() => {});
+        // Fire and forget: explicitly do NOT return a promise
+        this._startSound(args, util, () => {}).catch(() => {});
     }
 
     playSoundPolyUntilDone(args, util) {
-        return this._startSound(args, util, true).catch(() => {});
+        // Returns a promise so the thread waits until audio completes
+        return new Promise((resolve) => {
+            this._startSound(args, util, resolve).catch(() => resolve());
+        });
     }
 
     setSoundProperty(args, util) {
@@ -215,19 +219,21 @@ class Extension {
         return promise;
     }
 
-    _startSound(args, util, waitTillDone) {
-        return new Promise((resolve) => {
+    _startSound(args, util, onEndedCallback) {
+        return new Promise((resolveInner) => {
             try {
                 const target = util.target;
                 const audioEngine = this.runtime.audioEngine;
                 if (!target || !audioEngine || !audioEngine.audioContext) {
-                    resolve();
+                    onEndedCallback();
+                    resolveInner();
                     return;
                 }
 
                 const soundEntry = this._findSound(target, args.SOUND);
                 if (!soundEntry) {
-                    resolve();
+                    onEndedCallback();
+                    resolveInner();
                     return;
                 }
 
@@ -260,8 +266,16 @@ class Extension {
                     gain.connect(panner);
                     panner.connect(audioEngine.inputNode || audioContext.destination);
 
-                    // Store references to source, gain, and panner so we can modify them dynamically later
-                    const entry = { source, gain, panner, finish: resolve, soundName };
+                    const entry = { 
+                        source, 
+                        gain, 
+                        panner, 
+                        finish: () => {
+                            onEndedCallback();
+                        }, 
+                        soundName 
+                    };
+
                     if (!this.activeSounds.has(cloneId)) {
                         this.activeSounds.set(cloneId, new Set());
                     }
@@ -274,21 +288,26 @@ class Extension {
                             if (set.size === 0) this.activeSounds.delete(cloneId);
                         }
                         try { source.disconnect(); gain.disconnect(); panner.disconnect(); } catch (e) { /* ignore */ }
-                        resolve();
+                        onEndedCallback();
                     };
 
                     source.start(0);
+                    resolveInner();
 
-                    if (isLooping && waitTillDone) {
-                        resolve();
+                    if (isLooping) {
+                        // Looping sounds run indefinitely, so if requested "until done", 
+                        // we release the promise immediately so it doesn't block the stack.
+                        onEndedCallback();
                     }
                 }).catch((err) => {
                     console.warn('[Polyphonic Sounds] Could not play sound:', err);
-                    resolve();
+                    onEndedCallback();
+                    resolveInner();
                 });
             } catch (err) {
                 console.warn('[Polyphonic Sounds] Error:', err);
-                resolve();
+                onEndedCallback();
+                resolveInner();
             }
         });
     }
@@ -327,3 +346,4 @@ window.tempExt = {
         }
     }
 };
+```[cite: 1]
