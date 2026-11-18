@@ -15,7 +15,14 @@
                 name: 'Polyphonic & Clone Sounds',
                 color1: '#ff6680',
                 color2: '#e64d66',
+                // Embedded SVG Speaker Icon for the extension library and palette header
+                iconURI: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="white" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
                 blocks: [
+                    // Section Header 1
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Polyphonic Audio Playback'
+                    },
                     {
                         opcode: 'playSoundPolyWithOptions',
                         blockType: Scratch.BlockType.COMMAND,
@@ -38,6 +45,11 @@
                             PAN: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }
                         }
                     },
+                    // Section Header 2
+                    {
+                        blockType: Scratch.BlockType.LABEL,
+                        text: 'Clone Sound Management'
+                    },
                     {
                         opcode: 'stopCloneSounds',
                         blockType: Scratch.BlockType.COMMAND,
@@ -53,7 +65,6 @@
             };
         }
 
-        // Safe menu handler to prevent blank tab/crashing bugs
         getSounds(args, util) {
             try {
                 const target = (util && util.target) ? util.target : (Scratch.vm && Scratch.vm.editingTarget ? Scratch.vm.editingTarget : null);
@@ -70,11 +81,10 @@
         }
 
         playSoundPolyWithOptions(args, util) {
-            this._startSound(args, util); // Fire and forget
+            this._startSound(args, util);
         }
 
         playSoundPolyUntilDone(args, util) {
-            // Returning a Promise makes Scratch wait until resolve() is called
             return new Promise((resolve) => {
                 this._startSound(args, util, () => {
                     resolve();
